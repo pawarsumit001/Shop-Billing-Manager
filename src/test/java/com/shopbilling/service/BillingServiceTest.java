@@ -14,6 +14,7 @@ import com.shopbilling.model.Product;
 import com.shopbilling.repository.CustomerRepository;
 import com.shopbilling.repository.InvoiceRepository;
 import com.shopbilling.repository.ProductRepository;
+import com.shopbilling.repository.PurchaseRepository;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -23,12 +24,15 @@ class BillingServiceTest {
     private final ProductRepository products = mock(ProductRepository.class);
     private final CustomerRepository customers = mock(CustomerRepository.class);
     private final InvoiceRepository invoices = mock(InvoiceRepository.class);
-    private final BillingService service = new BillingService(products, customers, invoices);
+    private final PurchaseRepository purchases = mock(PurchaseRepository.class);
+    private final BillingService service = new BillingService(products, customers, invoices, purchases);
 
     @Test
     void rejectsPaidAmountGreaterThanTotalWithoutChangingStock() {
         Product product = product();
         when(products.findById(1L)).thenReturn(Optional.of(product));
+        when(purchases.findByProductIdAndRemainingQuantityGreaterThanOrderByPurchaseDateAscIdAsc(any(), any()))
+                .thenReturn(List.of());
 
         Invoice invoice = new Invoice();
         invoice.setPaidAmount(new BigDecimal("150"));
@@ -45,6 +49,8 @@ class BillingServiceTest {
     void createsPartialCreditBillAndReducesStock() {
         Product product = product();
         when(products.findById(1L)).thenReturn(Optional.of(product));
+        when(purchases.findByProductIdAndRemainingQuantityGreaterThanOrderByPurchaseDateAscIdAsc(any(), any()))
+                .thenReturn(List.of());
         when(invoices.save(any(Invoice.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         Invoice invoice = new Invoice();
@@ -61,6 +67,7 @@ class BillingServiceTest {
 
     private Product product() {
         Product product = new Product();
+        product.setId(1L);
         product.setName("Motor Pump");
         product.setQuantity(new BigDecimal("5"));
         product.setSellingPrice(new BigDecimal("100"));
