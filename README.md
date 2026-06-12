@@ -21,7 +21,7 @@ The React frontend is now separate:
 - Dashboard with today's sales, dues, product count, low stock
 - Reports for daily sales, monthly sales, low stock, customer dues
 - Excel stock export
-- Local SQLite database
+- PostgreSQL database support for Render/Neon deployment
 
 ## Default Login
 
@@ -54,13 +54,37 @@ The separate React frontend runs from `outputs/ShopBillingManagerReact`.
 
 ## Database
 
-The SQLite database is created automatically at:
+The backend uses PostgreSQL.
+
+For local development, create a database named:
 
 ```text
-data/shop-billing-manager.db
+shop_billing_manager
 ```
 
-For backup, copy this file when the app is stopped. Excel stock export is available from the Reports page.
+Default local connection:
+
+```properties
+spring.datasource.url=jdbc:postgresql://localhost:5432/shop_billing_manager
+spring.datasource.username=postgres
+spring.datasource.password=postgres
+```
+
+For Render with Neon, set one of these environment variable options:
+
+```text
+SPRING_DATASOURCE_URL=jdbc:postgresql://<host>/<db>?sslmode=require
+SPRING_DATASOURCE_USERNAME=<user>
+SPRING_DATASOURCE_PASSWORD=<password>
+```
+
+or set Neon/Render style:
+
+```text
+DATABASE_URL=postgresql://<user>:<password>@<host>/<db>?sslmode=require
+```
+
+Excel stock export is available from the Reports page.
 
 ## Shop Settings
 

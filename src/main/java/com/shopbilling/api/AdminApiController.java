@@ -89,7 +89,7 @@ public class AdminApiController {
                 "invoices", invoices.count(),
                 "purchases", purchases.count(),
                 "stockAdjustments", stockAdjustments.count(),
-                "message", "Local backup ke liye SQLite database file aur invoice PDFs ko safe drive par copy karein");
+                "message", "Backup ke liye PostgreSQL/Neon backup export aur invoice PDFs ko safe drive par copy karein");
     }
 
 }
