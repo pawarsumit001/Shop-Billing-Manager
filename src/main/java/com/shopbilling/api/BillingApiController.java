@@ -58,7 +58,10 @@ public class BillingApiController {
                 request == null || request.items() == null ? 0 : request.items().size());
         Invoice invoice = new Invoice();
         invoice.setCustomerName(request.customerName());
-        invoice.setMobileNumber(request.mobileNumber());
+        if (!ApiSupport.isValidIndianMobile(request.mobileNumber())) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Valid 10 digit mobile number enter karo"));
+        }
+        invoice.setMobileNumber(ApiSupport.normalizeMobile(request.mobileNumber()));
         invoice.setAddress(request.address());
         invoice.setCreatedBy(principal == null ? "system" : principal.getName());
         invoice.setPaymentMode(request.paymentMode() == null ? PaymentMode.CASH : request.paymentMode());

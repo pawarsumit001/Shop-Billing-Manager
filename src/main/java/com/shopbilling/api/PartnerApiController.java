@@ -78,6 +78,10 @@ public class PartnerApiController {
         if (supplier.getName() == null || supplier.getName().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("message", "Supplier name required hai"));
         }
+        if (!ApiSupport.isValidIndianMobile(supplier.getMobileNumber())) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Valid 10 digit mobile number enter karo"));
+        }
+        supplier.setMobileNumber(ApiSupport.normalizeMobile(supplier.getMobileNumber()));
         return ResponseEntity.ok(supplierSummary(suppliers.save(supplier)));
     }
 
@@ -173,6 +177,10 @@ public class PartnerApiController {
         if (!hasName && !hasMobile) {
             return ResponseEntity.badRequest().body(Map.of("message", "Customer name ya mobile required hai"));
         }
+        if (!ApiSupport.isValidIndianMobile(customer.getMobileNumber())) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Valid 10 digit mobile number enter karo"));
+        }
+        customer.setMobileNumber(ApiSupport.normalizeMobile(customer.getMobileNumber()));
         if (customer.getId() == null) {
             Customer existing = hasMobile
                     ? customers.findFirstByMobileNumberOrderByIdAsc(customer.getMobileNumber()).orElse(null)
