@@ -388,4 +388,8 @@ public class PartnerApiController {
         BigDecimal value = ApiSupport.nvl(totalPurchases).subtract(ApiSupport.nvl(totalPaid)).subtract(ApiSupport.nvl(totalSettled));
         return value.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : value;
     }
+
+    private String cleanOrDefault(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.trim().toUpperCase();
+    }
 }
