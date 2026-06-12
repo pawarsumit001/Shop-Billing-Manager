@@ -52,6 +52,29 @@ http://localhost:8080/api
 
 The separate React frontend runs from `outputs/ShopBillingManagerReact`.
 
+## Docker / Render Deployment
+
+This backend includes a Dockerfile for predictable Render deployment.
+
+Render settings:
+
+```text
+Service Type: Web Service
+Runtime: Docker
+Root Directory: blank or .
+Dockerfile Path: ./Dockerfile
+```
+
+No Build Command or Start Command is required when using Docker.
+
+Required database environment variable:
+
+```text
+DATABASE_URL=postgresql://<user>:<password>@<host>/<db>?sslmode=require
+```
+
+The app automatically uses Render's `PORT` environment variable.
+
 ## Database
 
 The backend uses PostgreSQL.

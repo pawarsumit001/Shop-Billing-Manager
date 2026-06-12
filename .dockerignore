@@ -1,0 +1,9 @@
+.git
+.idea
+.vscode
+data
+target
+*.db
+*.sqlite
+*.sqlite3
+*.log
