@@ -22,6 +22,7 @@ public class Purchase {
 
     private LocalDate purchaseDate = LocalDate.now();
     private BigDecimal quantity = BigDecimal.ZERO;
+    private BigDecimal remainingQuantity = BigDecimal.ZERO;
     private BigDecimal rate = BigDecimal.ZERO;
     private BigDecimal total = BigDecimal.ZERO;
     private String note;
@@ -36,6 +37,8 @@ public class Purchase {
     public void setPurchaseDate(LocalDate purchaseDate) { this.purchaseDate = purchaseDate; }
     public BigDecimal getQuantity() { return quantity; }
     public void setQuantity(BigDecimal quantity) { this.quantity = quantity; }
+    public BigDecimal getRemainingQuantity() { return remainingQuantity; }
+    public void setRemainingQuantity(BigDecimal remainingQuantity) { this.remainingQuantity = remainingQuantity; }
     public BigDecimal getRate() { return rate; }
     public void setRate(BigDecimal rate) { this.rate = rate; }
     public BigDecimal getTotal() { return total; }

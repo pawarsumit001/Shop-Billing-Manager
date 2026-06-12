@@ -61,6 +61,7 @@ public class StockService {
             product.setSupplier(supplier.getName());
         }
         purchase.setTotal(purchase.getQuantity().multiply(purchase.getRate()));
+        purchase.setRemainingQuantity(purchase.getQuantity());
         product.setQuantity(product.getQuantity().add(purchase.getQuantity()));
         product.setPurchasePrice(purchase.getRate());
         return purchases.save(purchase);

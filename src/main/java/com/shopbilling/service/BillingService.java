@@ -3,11 +3,14 @@ package com.shopbilling.service;
 import com.shopbilling.model.Customer;
 import com.shopbilling.model.Invoice;
 import com.shopbilling.model.InvoiceItem;
+import com.shopbilling.model.InvoiceItemLot;
 import com.shopbilling.model.PaymentMode;
 import com.shopbilling.model.Product;
+import com.shopbilling.model.Purchase;
 import com.shopbilling.repository.CustomerRepository;
 import com.shopbilling.repository.InvoiceRepository;
 import com.shopbilling.repository.ProductRepository;
+import com.shopbilling.repository.PurchaseRepository;
 import jakarta.transaction.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -19,11 +22,14 @@ public class BillingService {
     private final ProductRepository products;
     private final CustomerRepository customers;
     private final InvoiceRepository invoices;
+    private final PurchaseRepository purchases;
 
-    public BillingService(ProductRepository products, CustomerRepository customers, InvoiceRepository invoices) {
+    public BillingService(ProductRepository products, CustomerRepository customers, InvoiceRepository invoices,
+                          PurchaseRepository purchases) {
         this.products = products;
         this.customers = customers;
         this.invoices = invoices;
+        this.purchases = purchases;
     }
 
     @Transactional
@@ -57,6 +63,7 @@ public class BillingService {
             item.setPurchasePrice(nvl(product.getPurchasePrice()));
             item.setGstPercent(gstPercent);
             item.setLineTotal(lineTotal);
+            allocateSupplierLots(item, product, quantity);
             invoice.getItems().add(item);
 
             subtotal = subtotal.add(base);
@@ -89,6 +96,41 @@ public class BillingService {
         invoice.getItems().forEach(item -> item.getProduct().setQuantity(item.getProduct().getQuantity().subtract(item.getQuantity())));
         updateCustomerDue(invoice, due);
         return invoices.save(invoice);
+    }
+
+    private void allocateSupplierLots(InvoiceItem item, Product product, BigDecimal quantity) {
+        BigDecimal remaining = quantity;
+        List<Purchase> lots = purchases.findByProductIdAndRemainingQuantityGreaterThanOrderByPurchaseDateAscIdAsc(
+                product.getId(), BigDecimal.ZERO);
+        for (Purchase lot : lots) {
+            if (remaining.compareTo(BigDecimal.ZERO) <= 0) {
+                break;
+            }
+            BigDecimal available = nvl(lot.getRemainingQuantity());
+            if (available.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            BigDecimal consume = available.min(remaining);
+            lot.setRemainingQuantity(available.subtract(consume));
+
+            InvoiceItemLot itemLot = new InvoiceItemLot();
+            itemLot.setInvoiceItem(item);
+            itemLot.setPurchase(lot);
+            itemLot.setSupplier(lot.getSupplier());
+            itemLot.setQuantity(consume);
+            itemLot.setPurchaseRate(nvl(lot.getRate()));
+            itemLot.setNote("Auto FIFO supplier lot");
+            item.getLots().add(itemLot);
+            remaining = remaining.subtract(consume);
+        }
+        if (remaining.compareTo(BigDecimal.ZERO) > 0) {
+            InvoiceItemLot itemLot = new InvoiceItemLot();
+            itemLot.setInvoiceItem(item);
+            itemLot.setQuantity(remaining);
+            itemLot.setPurchaseRate(nvl(product.getPurchasePrice()));
+            itemLot.setNote("Legacy stock without supplier lot");
+            item.getLots().add(itemLot);
+        }
     }
 
     private void updateCustomerDue(Invoice invoice, BigDecimal due) {

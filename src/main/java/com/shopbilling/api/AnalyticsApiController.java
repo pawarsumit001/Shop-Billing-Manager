@@ -11,12 +11,14 @@ import com.shopbilling.dto.ApiDtos.StockAdjustmentDto;
 import com.shopbilling.dto.ApiDtos.SupplierClaimDto;
 import com.shopbilling.dto.ApiDtos.SupplierDto;
 import com.shopbilling.dto.ApiDtos.SupplierPaymentDto;
+import com.shopbilling.dto.ApiDtos.SupplierSettlementDto;
 import com.shopbilling.dto.ApiSupport;
 import com.shopbilling.model.Customer;
 import com.shopbilling.model.Invoice;
 import com.shopbilling.model.Purchase;
 import com.shopbilling.model.Supplier;
 import com.shopbilling.model.SupplierPayment;
+import com.shopbilling.model.SupplierSettlement;
 import com.shopbilling.repository.AppUserRepository;
 import com.shopbilling.repository.CustomerRepository;
 import com.shopbilling.repository.DuePaymentRepository;
@@ -28,6 +30,7 @@ import com.shopbilling.repository.StockAdjustmentRepository;
 import com.shopbilling.repository.SupplierRepository;
 import com.shopbilling.repository.SupplierClaimRepository;
 import com.shopbilling.repository.SupplierPaymentRepository;
+import com.shopbilling.repository.SupplierSettlementRepository;
 import com.shopbilling.service.AppSettingsService;
 import com.shopbilling.util.ProductFilters;
 import jakarta.transaction.Transactional;
@@ -58,12 +61,14 @@ public class AnalyticsApiController {
     private final AppSettingsService appSettings;
     private final SupplierClaimRepository supplierClaims;
     private final SupplierPaymentRepository supplierPayments;
+    private final SupplierSettlementRepository supplierSettlements;
 
     public AnalyticsApiController(ProductRepository products, SupplierRepository suppliers, CustomerRepository customers,
                                   InvoiceRepository invoices, PurchaseRepository purchases, ReturnRecordRepository returns,
                                   StockAdjustmentRepository stockAdjustments, DuePaymentRepository duePayments,
                                   AppUserRepository users, AppSettingsService appSettings,
-                                  SupplierClaimRepository supplierClaims, SupplierPaymentRepository supplierPayments) {
+                                  SupplierClaimRepository supplierClaims, SupplierPaymentRepository supplierPayments,
+                                  SupplierSettlementRepository supplierSettlements) {
         this.products = products;
         this.suppliers = suppliers;
         this.customers = customers;
@@ -76,6 +81,7 @@ public class AnalyticsApiController {
         this.appSettings = appSettings;
         this.supplierClaims = supplierClaims;
         this.supplierPayments = supplierPayments;
+        this.supplierSettlements = supplierSettlements;
     }
 
     @GetMapping("/reports")
@@ -99,6 +105,7 @@ public class AnalyticsApiController {
                 supplierClaims.findAll(Sort.by(Sort.Direction.DESC, "createdAt")).stream().map(SupplierClaimDto::from).toList(),
                 includeSales ? duePayments.findAll(Sort.by(Sort.Direction.DESC, "paidAt")).stream().map(DuePaymentDto::from).toList() : List.of(),
                 supplierPayments.findAll(Sort.by(Sort.Direction.DESC, "paidAt")).stream().map(SupplierPaymentDto::from).toList(),
+                supplierSettlements.findAll(Sort.by(Sort.Direction.DESC, "settledAt")).stream().map(SupplierSettlementDto::from).toList(),
                 buildReports(includeSales), appSettings.readSettings());
     }
 
@@ -167,6 +174,8 @@ public class AnalyticsApiController {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal totalPaid = supplierPayments.findBySupplierId(supplier.getId(), Sort.unsorted()).stream()
                 .map(SupplierPayment::getAmount).map(ApiSupport::nvl).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalSettled = supplierSettlements.findBySupplierId(supplier.getId(), Sort.unsorted()).stream()
+                .map(SupplierSettlement::getAmount).map(ApiSupport::nvl).reduce(BigDecimal.ZERO, BigDecimal::add);
         long productCount = supplierPurchases.stream()
                 .map(Purchase::getProduct)
                 .filter(java.util.Objects::nonNull)
@@ -175,6 +184,6 @@ public class AnalyticsApiController {
                 .distinct()
                 .count();
         String lastPurchaseDate = supplierPurchases.isEmpty() ? "" : String.valueOf(supplierPurchases.get(0).getPurchaseDate());
-        return SupplierDto.from(supplier, totalPurchases, totalPaid, productCount, lastPurchaseDate);
+        return SupplierDto.from(supplier, totalPurchases.subtract(totalSettled), totalPaid, productCount, lastPurchaseDate);
     }
 }

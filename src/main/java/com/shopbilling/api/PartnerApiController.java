@@ -9,6 +9,8 @@ import com.shopbilling.dto.ApiDtos.SupplierDto;
 import com.shopbilling.dto.ApiDtos.SupplierLedgerDto;
 import com.shopbilling.dto.ApiDtos.SupplierPaymentDto;
 import com.shopbilling.dto.ApiDtos.SupplierPaymentRequest;
+import com.shopbilling.dto.ApiDtos.SupplierSettlementDto;
+import com.shopbilling.dto.ApiDtos.SupplierSettlementRequest;
 import com.shopbilling.dto.ApiSupport;
 import com.shopbilling.model.Customer;
 import com.shopbilling.model.DuePayment;
@@ -17,14 +19,17 @@ import com.shopbilling.model.PaymentMode;
 import com.shopbilling.model.Purchase;
 import com.shopbilling.model.Supplier;
 import com.shopbilling.model.SupplierPayment;
+import com.shopbilling.model.SupplierSettlement;
 import com.shopbilling.repository.CustomerRepository;
 import com.shopbilling.repository.DuePaymentRepository;
 import com.shopbilling.repository.InvoiceRepository;
+import com.shopbilling.repository.ProductRepository;
 import com.shopbilling.repository.PurchaseRepository;
 import com.shopbilling.repository.ReturnRecordRepository;
 import com.shopbilling.repository.SupplierRepository;
 import com.shopbilling.repository.SupplierClaimRepository;
 import com.shopbilling.repository.SupplierPaymentRepository;
+import com.shopbilling.repository.SupplierSettlementRepository;
 import jakarta.transaction.Transactional;
 import java.math.BigDecimal;
 import java.security.Principal;
@@ -50,22 +55,27 @@ public class PartnerApiController {
     private final DuePaymentRepository duePayments;
     private final InvoiceRepository invoices;
     private final PurchaseRepository purchases;
+    private final ProductRepository products;
     private final ReturnRecordRepository returns;
     private final SupplierClaimRepository supplierClaims;
     private final SupplierPaymentRepository supplierPayments;
+    private final SupplierSettlementRepository supplierSettlements;
 
     public PartnerApiController(SupplierRepository suppliers, CustomerRepository customers,
                                 DuePaymentRepository duePayments, InvoiceRepository invoices,
-                                PurchaseRepository purchases, ReturnRecordRepository returns,
-                                SupplierClaimRepository supplierClaims, SupplierPaymentRepository supplierPayments) {
+                                PurchaseRepository purchases, ProductRepository products, ReturnRecordRepository returns,
+                                SupplierClaimRepository supplierClaims, SupplierPaymentRepository supplierPayments,
+                                SupplierSettlementRepository supplierSettlements) {
         this.suppliers = suppliers;
         this.customers = customers;
         this.duePayments = duePayments;
         this.invoices = invoices;
         this.purchases = purchases;
+        this.products = products;
         this.returns = returns;
         this.supplierClaims = supplierClaims;
         this.supplierPayments = supplierPayments;
+        this.supplierSettlements = supplierSettlements;
     }
 
     @GetMapping("/suppliers")
@@ -106,24 +116,30 @@ public class PartnerApiController {
         }
         List<Purchase> supplierPurchases = purchases.findBySupplierId(id, Sort.by(Sort.Direction.DESC, "purchaseDate"));
         List<SupplierPayment> payments = supplierPayments.findBySupplierId(id, Sort.by(Sort.Direction.DESC, "paidAt"));
+        List<SupplierSettlement> settlements = supplierSettlements.findBySupplierId(id, Sort.by(Sort.Direction.DESC, "settledAt"));
         BigDecimal totalPurchases = sumPurchases(supplierPurchases);
         BigDecimal totalPaid = sumPayments(payments);
-        BigDecimal currentDue = due(totalPurchases, totalPaid);
+        BigDecimal totalSettled = sumSettlements(settlements);
+        BigDecimal currentDue = due(totalPurchases, totalPaid, totalSettled);
         List<LedgerEntryDto> entries = supplierPurchases.stream()
                 .map(purchase -> new LedgerEntryDto(purchase.getId(), "PURCHASE", String.valueOf(purchase.getPurchaseDate()),
                         purchase.getNote(), ApiSupport.nvl(purchase.getTotal()), BigDecimal.ZERO, BigDecimal.ZERO, ""))
                 .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
         payments.forEach(payment -> entries.add(new LedgerEntryDto(payment.getId(), "PAYMENT", String.valueOf(payment.getPaidAt()),
                 payment.getNote(), payment.getAmount(), payment.getAmount(), payment.getAfterDue(), payment.getPaidBy())));
+        settlements.forEach(settlement -> entries.add(new LedgerEntryDto(settlement.getId(), "SETTLEMENT-" + settlement.getSettlementType(),
+                String.valueOf(settlement.getSettledAt()), settlement.getNote(), settlement.getAmount(),
+                settlement.getAmount(), BigDecimal.ZERO, settlement.getRecordedBy())));
         var claims = supplierClaims.findBySupplierId(id, Sort.by(Sort.Direction.DESC, "createdAt"));
         claims.forEach(claim ->
                 entries.add(new LedgerEntryDto(claim.getId(), "CLAIM-" + claim.getStatus(), String.valueOf(claim.getCreatedAt()),
                         claim.getProduct() == null ? claim.getReason() : claim.getProduct().getName() + " - " + claim.getReason(),
                         claim.getEstimatedAmount(), BigDecimal.ZERO, BigDecimal.ZERO, claim.getCreatedBy())));
         entries.sort((a, b) -> b.date().compareTo(a.date()));
-        return ResponseEntity.ok(new SupplierLedgerDto(supplierSummary(supplier), totalPurchases, totalPaid, currentDue,
+        return ResponseEntity.ok(new SupplierLedgerDto(supplierSummary(supplier), totalPurchases, totalPaid, totalSettled, currentDue,
                 supplierPurchases.stream().map(PurchaseDto::from).toList(),
                 payments.stream().map(SupplierPaymentDto::from).toList(),
+                settlements.stream().map(SupplierSettlementDto::from).toList(),
                 claims.stream().map(com.shopbilling.dto.ApiDtos.SupplierClaimDto::from).toList(),
                 entries));
     }
@@ -131,6 +147,45 @@ public class PartnerApiController {
     @GetMapping("/supplier-payments")
     public List<SupplierPaymentDto> supplierPayments() {
         return supplierPayments.findAll(Sort.by(Sort.Direction.DESC, "paidAt")).stream().map(SupplierPaymentDto::from).toList();
+    }
+
+    @GetMapping("/supplier-settlements")
+    public List<SupplierSettlementDto> supplierSettlements() {
+        return supplierSettlements.findAll(Sort.by(Sort.Direction.DESC, "settledAt")).stream().map(SupplierSettlementDto::from).toList();
+    }
+
+    @PostMapping("/supplier-settlements")
+    @Transactional
+    public ResponseEntity<?> saveSupplierSettlement(@RequestBody SupplierSettlementRequest request, Principal principal) {
+        if (request.supplierId() == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Supplier select karna zaroori hai"));
+        }
+        BigDecimal amount = ApiSupport.nvl(request.amount());
+        BigDecimal quantity = ApiSupport.nvl(request.quantity());
+        if (amount.compareTo(BigDecimal.ZERO) < 0 || quantity.compareTo(BigDecimal.ZERO) < 0) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Quantity/amount negative nahi ho sakta"));
+        }
+        if (amount.compareTo(BigDecimal.ZERO) == 0 && quantity.compareTo(BigDecimal.ZERO) == 0) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Settlement quantity ya amount enter karo"));
+        }
+        Supplier supplier = suppliers.findById(request.supplierId()).orElse(null);
+        if (supplier == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Supplier not found"));
+        }
+        SupplierSettlement settlement = new SupplierSettlement();
+        settlement.setSupplier(supplier);
+        settlement.setAmount(amount);
+        settlement.setQuantity(quantity);
+        settlement.setSettlementType(cleanOrDefault(request.settlementType(), "CREDIT_NOTE"));
+        settlement.setNote(request.note());
+        settlement.setRecordedBy(principal == null ? "system" : principal.getName());
+        if (request.productId() != null) {
+            products.findById(request.productId()).ifPresent(settlement::setProduct);
+        }
+        if (request.claimId() != null) {
+            supplierClaims.findById(request.claimId()).ifPresent(settlement::setClaim);
+        }
+        return ResponseEntity.ok(SupplierSettlementDto.from(supplierSettlements.save(settlement)));
     }
 
     @PostMapping("/supplier-payments")
@@ -299,6 +354,7 @@ public class PartnerApiController {
         var supplierPurchases = purchases.findBySupplierId(supplier.getId(), Sort.by(Sort.Direction.DESC, "purchaseDate"));
         BigDecimal totalPurchases = sumPurchases(supplierPurchases);
         BigDecimal totalPaid = sumPayments(supplierPayments.findBySupplierId(supplier.getId(), Sort.by(Sort.Direction.DESC, "paidAt")));
+        BigDecimal totalSettled = sumSettlements(supplierSettlements.findBySupplierId(supplier.getId(), Sort.unsorted()));
         long productCount = supplierPurchases.stream()
                 .map(Purchase::getProduct)
                 .filter(Objects::nonNull)
@@ -307,12 +363,13 @@ public class PartnerApiController {
                 .distinct()
                 .count();
         String lastPurchaseDate = supplierPurchases.isEmpty() ? "" : String.valueOf(supplierPurchases.get(0).getPurchaseDate());
-        return SupplierDto.from(supplier, totalPurchases, totalPaid, productCount, lastPurchaseDate);
+        return SupplierDto.from(supplier, totalPurchases.subtract(totalSettled), totalPaid, productCount, lastPurchaseDate);
     }
 
     private BigDecimal supplierDue(Long supplierId) {
         return due(sumPurchases(purchases.findBySupplierId(supplierId, Sort.unsorted())),
-                sumPayments(supplierPayments.findBySupplierId(supplierId, Sort.unsorted())));
+                sumPayments(supplierPayments.findBySupplierId(supplierId, Sort.unsorted())),
+                sumSettlements(supplierSettlements.findBySupplierId(supplierId, Sort.unsorted())));
     }
 
     private BigDecimal sumPurchases(List<Purchase> data) {
@@ -323,8 +380,12 @@ public class PartnerApiController {
         return data.stream().map(SupplierPayment::getAmount).map(ApiSupport::nvl).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    private BigDecimal due(BigDecimal totalPurchases, BigDecimal totalPaid) {
-        BigDecimal value = ApiSupport.nvl(totalPurchases).subtract(ApiSupport.nvl(totalPaid));
+    private BigDecimal sumSettlements(List<SupplierSettlement> data) {
+        return data.stream().map(SupplierSettlement::getAmount).map(ApiSupport::nvl).reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal due(BigDecimal totalPurchases, BigDecimal totalPaid, BigDecimal totalSettled) {
+        BigDecimal value = ApiSupport.nvl(totalPurchases).subtract(ApiSupport.nvl(totalPaid)).subtract(ApiSupport.nvl(totalSettled));
         return value.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : value;
     }
 }

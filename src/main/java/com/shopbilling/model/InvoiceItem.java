@@ -1,11 +1,15 @@
 package com.shopbilling.model;
 
 import jakarta.persistence.Entity;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 public class InvoiceItem {
@@ -26,6 +30,9 @@ public class InvoiceItem {
     private BigDecimal gstPercent = BigDecimal.ZERO;
     private BigDecimal lineTotal = BigDecimal.ZERO;
 
+    @OneToMany(mappedBy = "invoiceItem", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<InvoiceItemLot> lots = new ArrayList<>();
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public Invoice getInvoice() { return invoice; }
@@ -44,4 +51,6 @@ public class InvoiceItem {
     public void setGstPercent(BigDecimal gstPercent) { this.gstPercent = gstPercent; }
     public BigDecimal getLineTotal() { return lineTotal; }
     public void setLineTotal(BigDecimal lineTotal) { this.lineTotal = lineTotal; }
+    public List<InvoiceItemLot> getLots() { return lots; }
+    public void setLots(List<InvoiceItemLot> lots) { this.lots = lots; }
 }

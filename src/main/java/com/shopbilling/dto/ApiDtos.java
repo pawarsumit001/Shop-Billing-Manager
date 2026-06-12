@@ -5,6 +5,7 @@ import com.shopbilling.model.Customer;
 import com.shopbilling.model.DuePayment;
 import com.shopbilling.model.Invoice;
 import com.shopbilling.model.InvoiceItem;
+import com.shopbilling.model.InvoiceItemLot;
 import com.shopbilling.model.PaymentMode;
 import com.shopbilling.model.Product;
 import com.shopbilling.model.Purchase;
@@ -13,6 +14,7 @@ import com.shopbilling.model.StockAdjustment;
 import com.shopbilling.model.Supplier;
 import com.shopbilling.model.SupplierClaim;
 import com.shopbilling.model.SupplierPayment;
+import com.shopbilling.model.SupplierSettlement;
 import com.shopbilling.model.UserRole;
 import java.math.BigDecimal;
 import java.util.List;
@@ -48,6 +50,10 @@ public final class ApiDtos {
     public record SupplierPaymentRequest(Long supplierId, BigDecimal amount, PaymentMode paymentMode, String note) {
     }
 
+    public record SupplierSettlementRequest(Long supplierId, Long productId, Long claimId, String settlementType,
+                                            BigDecimal quantity, BigDecimal amount, String note) {
+    }
+
     public record UserRequest(String name, String username, String password, UserRole role, boolean active) {
     }
 
@@ -70,10 +76,23 @@ public final class ApiDtos {
     }
 
     public record InvoiceItemDto(Long productId, String productName, BigDecimal quantity, BigDecimal rate,
-                                 BigDecimal purchasePrice, BigDecimal gstPercent, BigDecimal lineTotal) {
+                                 BigDecimal purchasePrice, BigDecimal gstPercent, BigDecimal lineTotal,
+                                 List<InvoiceItemLotDto> lots) {
         public static InvoiceItemDto from(InvoiceItem item) {
             return new InvoiceItemDto(item.getProduct() == null ? null : item.getProduct().getId(), item.getProductName(),
-                    item.getQuantity(), item.getRate(), item.getPurchasePrice(), item.getGstPercent(), item.getLineTotal());
+                    item.getQuantity(), item.getRate(), item.getPurchasePrice(), item.getGstPercent(), item.getLineTotal(),
+                    item.getLots().stream().map(InvoiceItemLotDto::from).toList());
+        }
+    }
+
+    public record InvoiceItemLotDto(Long purchaseId, Long supplierId, String supplierName, BigDecimal quantity,
+                                    BigDecimal purchaseRate, String note) {
+        public static InvoiceItemLotDto from(InvoiceItemLot lot) {
+            Supplier supplier = lot.getSupplier();
+            Purchase purchase = lot.getPurchase();
+            return new InvoiceItemLotDto(purchase == null ? null : purchase.getId(),
+                    supplier == null ? null : supplier.getId(), supplier == null ? "" : supplier.getName(),
+                    lot.getQuantity(), lot.getPurchaseRate(), lot.getNote());
         }
     }
 
@@ -84,14 +103,16 @@ public final class ApiDtos {
     }
 
     public record PurchaseDto(Long id, Long productId, String productName, Long supplierId, String supplierName,
-                              String purchaseDate, BigDecimal quantity, BigDecimal rate, BigDecimal total, String note) {
+                              String purchaseDate, BigDecimal quantity, BigDecimal remainingQuantity,
+                              BigDecimal rate, BigDecimal total, String note) {
         public static PurchaseDto from(Purchase purchase) {
             Product product = purchase.getProduct();
             Supplier supplier = purchase.getSupplier();
             return new PurchaseDto(purchase.getId(), product == null ? null : product.getId(),
                     product == null ? "" : ApiSupport.productLabel(product), supplier == null ? null : supplier.getId(),
                     supplier == null ? "" : supplier.getName(), String.valueOf(purchase.getPurchaseDate()),
-                    purchase.getQuantity(), purchase.getRate(), purchase.getTotal(), purchase.getNote());
+                    purchase.getQuantity(), ApiSupport.nvl(purchase.getRemainingQuantity()),
+                    purchase.getRate(), purchase.getTotal(), purchase.getNote());
         }
     }
 
@@ -119,6 +140,21 @@ public final class ApiDtos {
                     supplier == null ? "" : supplier.getName(), String.valueOf(payment.getPaidAt()),
                     payment.getAmount(), payment.getBeforeDue(), payment.getAfterDue(),
                     payment.getPaymentMode(), payment.getNote(), payment.getPaidBy());
+        }
+    }
+
+    public record SupplierSettlementDto(Long id, Long supplierId, String supplierName, Long productId, String productName,
+                                        Long claimId, String settledAt, String settlementType, BigDecimal quantity,
+                                        BigDecimal amount, String note, String recordedBy) {
+        public static SupplierSettlementDto from(SupplierSettlement settlement) {
+            Supplier supplier = settlement.getSupplier();
+            Product product = settlement.getProduct();
+            SupplierClaim claim = settlement.getClaim();
+            return new SupplierSettlementDto(settlement.getId(), supplier == null ? null : supplier.getId(),
+                    supplier == null ? "" : supplier.getName(), product == null ? null : product.getId(),
+                    product == null ? "" : ApiSupport.productLabel(product), claim == null ? null : claim.getId(),
+                    String.valueOf(settlement.getSettledAt()), settlement.getSettlementType(),
+                    settlement.getQuantity(), settlement.getAmount(), settlement.getNote(), settlement.getRecordedBy());
         }
     }
 
@@ -157,8 +193,9 @@ public final class ApiDtos {
     }
 
     public record SupplierLedgerDto(SupplierDto supplier, BigDecimal totalPurchases, BigDecimal totalPaid,
-                                    BigDecimal currentDue, List<PurchaseDto> purchases,
-                                    List<SupplierPaymentDto> payments, List<SupplierClaimDto> claims,
+                                    BigDecimal totalSettled, BigDecimal currentDue, List<PurchaseDto> purchases,
+                                    List<SupplierPaymentDto> payments, List<SupplierSettlementDto> settlements,
+                                    List<SupplierClaimDto> claims,
                                     List<LedgerEntryDto> entries) {
     }
 
@@ -202,6 +239,7 @@ public final class ApiDtos {
                                List<InvoiceDto> invoices, List<PurchaseDto> purchases, List<ReturnDto> returns,
                                List<StockAdjustmentDto> stockAdjustments, List<SupplierClaimDto> supplierClaims,
                                List<DuePaymentDto> duePayments, List<SupplierPaymentDto> supplierPayments,
+                               List<SupplierSettlementDto> supplierSettlements,
                                ReportDto reports, AppSettingsDto settings) {
     }
 }
