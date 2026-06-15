@@ -59,8 +59,8 @@ class BillingServiceTest {
 
         Invoice saved = service.createInvoice(invoice, List.of(1L), List.of(BigDecimal.ONE));
 
-        assertEquals(new BigDecimal("100"), saved.getTotal());
-        assertEquals(new BigDecimal("60"), saved.getDueAmount());
+        assertEquals(0, new BigDecimal("100").compareTo(saved.getTotal()));
+        assertEquals(0, new BigDecimal("60").compareTo(saved.getDueAmount()));
         assertEquals(PaymentMode.CREDIT, saved.getPaymentMode());
         assertEquals(new BigDecimal("4"), product.getQuantity());
     }

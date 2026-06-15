@@ -73,6 +73,11 @@ Required database environment variable:
 DATABASE_URL=postgresql://<user>:<password>@<host>/<db>?sslmode=require
 ```
 
+Use the exact connection string from Neon. Do not set only
+`SPRING_DATASOURCE_URL` unless you also set `SPRING_DATASOURCE_USERNAME` and
+`SPRING_DATASOURCE_PASSWORD`; otherwise Spring will fall back to the local
+`postgres/postgres` defaults and startup will fail.
+
 The app automatically uses Render's `PORT` environment variable.
 
 ## Database
@@ -106,6 +111,9 @@ or set Neon/Render style:
 ```text
 DATABASE_URL=postgresql://<user>:<password>@<host>/<db>?sslmode=require
 ```
+
+Recommended on Render: set only `DATABASE_URL` using Neon's pooled or direct
+Postgres URL. The app converts it to JDBC automatically.
 
 Excel stock export is available from the Reports page.
 

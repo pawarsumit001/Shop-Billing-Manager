@@ -15,11 +15,9 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
 
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
-        if (hasText(environment.getProperty("SPRING_DATASOURCE_URL"))) {
-            return;
-        }
-
-        String databaseUrl = environment.getProperty("DATABASE_URL");
+        String datasourceUrl = environment.getProperty("SPRING_DATASOURCE_URL");
+        String databaseUrl = firstText(datasourceUrl, environment.getProperty("DATABASE_URL"),
+                environment.getProperty("JDBC_DATABASE_URL"));
         if (!hasText(databaseUrl)) {
             return;
         }
@@ -28,7 +26,7 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
         if (databaseUrl.startsWith("jdbc:postgresql://")) {
             datasource.put("spring.datasource.url", databaseUrl);
         } else if (databaseUrl.startsWith("postgres://") || databaseUrl.startsWith("postgresql://")) {
-            applyPostgresUrl(databaseUrl, datasource);
+            applyPostgresUrl(databaseUrl, datasource, environment);
         }
 
         if (!datasource.isEmpty()) {
@@ -36,7 +34,7 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
         }
     }
 
-    private void applyPostgresUrl(String databaseUrl, Map<String, Object> datasource) {
+    private void applyPostgresUrl(String databaseUrl, Map<String, Object> datasource, ConfigurableEnvironment environment) {
         URI uri = URI.create(databaseUrl);
         StringBuilder jdbcUrl = new StringBuilder("jdbc:postgresql://")
                 .append(uri.getHost());
@@ -51,11 +49,22 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
         datasource.put("spring.datasource.url", jdbcUrl.toString());
         if (hasText(uri.getUserInfo())) {
             String[] userInfo = uri.getUserInfo().split(":", 2);
-            datasource.put("spring.datasource.username", decode(userInfo[0]));
-            if (userInfo.length > 1) {
+            if (!hasText(environment.getProperty("SPRING_DATASOURCE_USERNAME"))) {
+                datasource.put("spring.datasource.username", decode(userInfo[0]));
+            }
+            if (userInfo.length > 1 && !hasText(environment.getProperty("SPRING_DATASOURCE_PASSWORD"))) {
                 datasource.put("spring.datasource.password", decode(userInfo[1]));
             }
         }
+    }
+
+    private String firstText(String... values) {
+        for (String value : values) {
+            if (hasText(value)) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private String decode(String value) {
