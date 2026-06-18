@@ -19,10 +19,15 @@ import org.springframework.stereotype.Service;
 public class DuePaymentService {
     private final CustomerRepository customers;
     private final DuePaymentRepository duePayments;
+    private final IdempotencyService idempotencyService;
+    private final AuditLogService auditLogService;
 
-    public DuePaymentService(CustomerRepository customers, DuePaymentRepository duePayments) {
+    public DuePaymentService(CustomerRepository customers, DuePaymentRepository duePayments,
+                             IdempotencyService idempotencyService, AuditLogService auditLogService) {
         this.customers = customers;
         this.duePayments = duePayments;
+        this.idempotencyService = idempotencyService;
+        this.auditLogService = auditLogService;
     }
 
     public List<DuePaymentDto> findAll() {
@@ -38,6 +43,7 @@ public class DuePaymentService {
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Payment amount 0 se zyada hona chahiye");
         }
+        idempotencyService.checkAndRemember("due-payment", request.clientRequestId());
         Customer customer = customers.findById(request.customerId())
                 .orElseThrow(() -> new IllegalArgumentException("Customer not found"));
         BigDecimal beforeDue = ApiSupport.nvl(customer.getDueAmount());
@@ -60,6 +66,9 @@ public class DuePaymentService {
         payment.setPaymentMode(request.paymentMode() == null ? PaymentMode.CASH : request.paymentMode());
         payment.setNote(request.note());
         payment.setReceivedBy(principal == null ? "system" : principal.getName());
-        return DuePaymentDto.from(duePayments.save(payment));
+        DuePayment saved = duePayments.save(payment);
+        auditLogService.record(saved.getReceivedBy(), "RECEIVE_DUE_PAYMENT", "Customer", customer.getId(),
+                "amount=" + amount + ", before=" + beforeDue + ", after=" + afterDue);
+        return DuePaymentDto.from(saved);
     }
 }

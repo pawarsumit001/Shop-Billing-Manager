@@ -24,6 +24,7 @@ public class ReturnRecord {
     private BigDecimal quantity = BigDecimal.ZERO;
     private BigDecimal refundAmount = BigDecimal.ZERO;
     private String reason;
+    private String clientRequestId;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -39,4 +40,6 @@ public class ReturnRecord {
     public void setRefundAmount(BigDecimal refundAmount) { this.refundAmount = refundAmount; }
     public String getReason() { return reason; }
     public void setReason(String reason) { this.reason = reason; }
+    public String getClientRequestId() { return clientRequestId; }
+    public void setClientRequestId(String clientRequestId) { this.clientRequestId = clientRequestId; }
 }

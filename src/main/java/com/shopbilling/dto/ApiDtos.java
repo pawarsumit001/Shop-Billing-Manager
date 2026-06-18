@@ -28,30 +28,34 @@ public final class ApiDtos {
 
     public record BillingRequest(String customerName, String mobileNumber, String address, PaymentMode paymentMode,
                                  boolean gstEnabled, BigDecimal discount, BigDecimal paidAmount,
-                                 List<BillingItemRequest> items) {
+                                 List<BillingItemRequest> items, String clientRequestId) {
     }
 
     public record BillingItemRequest(Long productId, BigDecimal quantity) {
     }
 
-    public record DuePaymentRequest(Long customerId, BigDecimal amount, PaymentMode paymentMode, String note) {
+    public record DuePaymentRequest(Long customerId, BigDecimal amount, PaymentMode paymentMode, String note,
+                                    String clientRequestId) {
     }
 
-    public record StockAdjustmentRequest(Long productId, BigDecimal quantityChange, String reason, String note) {
+    public record StockAdjustmentRequest(Long productId, BigDecimal quantityChange, String reason, String note,
+                                         String clientRequestId) {
     }
 
     public record SupplierClaimRequest(Long productId, Long supplierId, String claimType, String status,
-                                       BigDecimal quantity, BigDecimal estimatedAmount, String reason, String note) {
+                                       BigDecimal quantity, BigDecimal estimatedAmount, String reason, String note,
+                                       String clientRequestId) {
     }
 
     public record SupplierClaimStatusRequest(String status, String note) {
     }
 
-    public record SupplierPaymentRequest(Long supplierId, BigDecimal amount, PaymentMode paymentMode, String note) {
+    public record SupplierPaymentRequest(Long supplierId, BigDecimal amount, PaymentMode paymentMode, String note,
+                                         String clientRequestId) {
     }
 
     public record SupplierSettlementRequest(Long supplierId, Long productId, Long claimId, String settlementType,
-                                            BigDecimal quantity, BigDecimal amount, String note) {
+                                            BigDecimal quantity, BigDecimal amount, String note, String clientRequestId) {
     }
 
     public record UserRequest(String name, String username, String password, UserRole role, boolean active) {

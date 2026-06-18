@@ -23,17 +23,23 @@ public class BillingService {
     private final CustomerRepository customers;
     private final InvoiceRepository invoices;
     private final PurchaseRepository purchases;
+    private final IdempotencyService idempotencyService;
+    private final AuditLogService auditLogService;
 
     public BillingService(ProductRepository products, CustomerRepository customers, InvoiceRepository invoices,
-                          PurchaseRepository purchases) {
+                          PurchaseRepository purchases, IdempotencyService idempotencyService,
+                          AuditLogService auditLogService) {
         this.products = products;
         this.customers = customers;
         this.invoices = invoices;
         this.purchases = purchases;
+        this.idempotencyService = idempotencyService;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional
-    public Invoice createInvoice(Invoice invoice, List<Long> productIds, List<BigDecimal> quantities) {
+    public Invoice createInvoice(Invoice invoice, List<Long> productIds, List<BigDecimal> quantities, String clientRequestId) {
+        idempotencyService.checkAndRemember("billing", clientRequestId);
         BigDecimal subtotal = BigDecimal.ZERO;
         BigDecimal gstTotal = BigDecimal.ZERO;
 
@@ -95,7 +101,10 @@ public class BillingService {
 
         invoice.getItems().forEach(item -> item.getProduct().setQuantity(item.getProduct().getQuantity().subtract(item.getQuantity())));
         updateCustomerDue(invoice, due);
-        return invoices.save(invoice);
+        Invoice saved = invoices.save(invoice);
+        auditLogService.record(saved.getCreatedBy(), "CREATE_BILL", "Invoice", saved.getId(),
+                "total=" + saved.getTotal() + ", due=" + saved.getDueAmount());
+        return saved;
     }
 
     private void allocateSupplierLots(InvoiceItem item, Product product, BigDecimal quantity) {

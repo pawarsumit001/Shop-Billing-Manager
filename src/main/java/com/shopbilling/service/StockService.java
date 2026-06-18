@@ -3,6 +3,8 @@ package com.shopbilling.service;
 import com.shopbilling.model.Customer;
 import com.shopbilling.model.DuePayment;
 import com.shopbilling.model.Invoice;
+import com.shopbilling.model.InvoiceItem;
+import com.shopbilling.model.InvoiceItemLot;
 import com.shopbilling.model.PaymentMode;
 import com.shopbilling.model.Product;
 import com.shopbilling.model.Purchase;
@@ -16,6 +18,7 @@ import com.shopbilling.repository.ReturnRecordRepository;
 import com.shopbilling.repository.SupplierRepository;
 import jakarta.transaction.Transactional;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -69,6 +72,9 @@ public class StockService {
 
     @Transactional
     public ReturnRecord recordReturn(ReturnRecord returnRecord) {
+        if (returnRecord.getInvoice() == null || returnRecord.getInvoice().getId() == null) {
+            throw new IllegalArgumentException("Return ke liye invoice select karna zaroori hai");
+        }
         if (returnRecord.getProduct() == null || returnRecord.getProduct().getId() == null) {
             throw new IllegalArgumentException("Product select karna zaroori hai");
         }
@@ -80,18 +86,70 @@ public class StockService {
         }
         Product product = products.findById(returnRecord.getProduct().getId())
                 .orElseThrow(() -> new IllegalArgumentException("Product not found"));
+        Invoice invoice = invoices.findById(returnRecord.getInvoice().getId())
+                .orElseThrow(() -> new IllegalArgumentException("Invoice not found"));
+        InvoiceItem item = invoice.getItems().stream()
+                .filter(invoiceItem -> invoiceItem.getProduct() != null && product.getId().equals(invoiceItem.getProduct().getId()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Selected product is invoice mein sold nahi hua"));
+        BigDecimal alreadyReturned = returns.findByInvoiceIdAndProductId(invoice.getId(), product.getId()).stream()
+                .map(ReturnRecord::getQuantity)
+                .map(value -> value == null ? BigDecimal.ZERO : value)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal remainingReturnable = item.getQuantity().subtract(alreadyReturned);
+        if (remainingReturnable.compareTo(returnRecord.getQuantity()) < 0) {
+            throw new IllegalArgumentException("Return quantity sold quantity se zyada hai. Returnable qty: " + remainingReturnable);
+        }
+        validateRefundAmount(returnRecord, item);
+
         product.setQuantity(product.getQuantity().add(returnRecord.getQuantity()));
+        restoreSupplierLots(item, returnRecord.getQuantity());
         returnRecord.setProduct(product);
         if (returnRecord.getRefundAmount() == null) {
             returnRecord.setRefundAmount(BigDecimal.ZERO);
         }
-        if (returnRecord.getInvoice() != null && returnRecord.getInvoice().getId() != null) {
-            Invoice invoice = invoices.findById(returnRecord.getInvoice().getId())
-                    .orElseThrow(() -> new IllegalArgumentException("Invoice not found"));
-            returnRecord.setInvoice(invoice);
-            adjustDueForReturn(invoice, returnRecord.getRefundAmount());
-        }
+        returnRecord.setInvoice(invoice);
+        adjustDueForReturn(invoice, returnRecord.getRefundAmount());
         return returns.save(returnRecord);
+    }
+
+    private void validateRefundAmount(ReturnRecord returnRecord, InvoiceItem item) {
+        BigDecimal refund = returnRecord.getRefundAmount() == null ? BigDecimal.ZERO : returnRecord.getRefundAmount();
+        if (refund.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+        BigDecimal soldQuantity = item.getQuantity() == null ? BigDecimal.ZERO : item.getQuantity();
+        if (soldQuantity.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Invoice item quantity invalid hai");
+        }
+        BigDecimal maxRefund = item.getLineTotal()
+                .multiply(returnRecord.getQuantity())
+                .divide(soldQuantity, 2, RoundingMode.HALF_UP);
+        if (refund.compareTo(maxRefund) > 0) {
+            throw new IllegalArgumentException("Refund amount item return value se zyada hai. Max refund: " + maxRefund);
+        }
+    }
+
+    private void restoreSupplierLots(InvoiceItem item, BigDecimal returnQuantity) {
+        BigDecimal remaining = returnQuantity;
+        BigDecimal soldQuantity = item.getQuantity() == null ? BigDecimal.ZERO : item.getQuantity();
+        if (soldQuantity.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+        for (InvoiceItemLot lot : item.getLots()) {
+            if (remaining.compareTo(BigDecimal.ZERO) <= 0) {
+                break;
+            }
+            BigDecimal lotQuantity = lot.getQuantity() == null ? BigDecimal.ZERO : lot.getQuantity();
+            BigDecimal restore = lotQuantity.multiply(returnQuantity).divide(soldQuantity, 3, RoundingMode.HALF_UP).min(remaining);
+            if (restore.compareTo(BigDecimal.ZERO) <= 0 || lot.getPurchase() == null) {
+                continue;
+            }
+            Purchase purchase = lot.getPurchase();
+            purchase.setRemainingQuantity((purchase.getRemainingQuantity() == null ? BigDecimal.ZERO : purchase.getRemainingQuantity()).add(restore));
+            purchases.save(purchase);
+            remaining = remaining.subtract(restore);
+        }
     }
 
     private void adjustDueForReturn(Invoice invoice, BigDecimal refundAmount) {

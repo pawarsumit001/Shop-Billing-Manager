@@ -20,6 +20,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.List;
+import org.springframework.http.HttpMethod;
 
 @Configuration
 public class SecurityConfig {
@@ -29,7 +30,12 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/", "/api/login", "/api/csrf", "/api/health").permitAll()
-                        .requestMatchers("/api/users/**", "/api/settings", "/api/settings/**").hasAnyRole("OWNER", "ADMIN")
+                        .requestMatchers("/api/users/**", "/api/settings", "/api/settings/**", "/api/backup").hasAnyRole("OWNER", "ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/reports").hasAnyRole("OWNER", "ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/products/**", "/api/purchases/**", "/api/returns/**",
+                                "/api/stock-adjustments/**", "/api/supplier-claims/**", "/api/supplier-payments/**",
+                                "/api/supplier-settlements/**", "/api/suppliers/**", "/api/due-payments/**")
+                        .hasAnyRole("OWNER", "ADMIN")
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, exception) ->

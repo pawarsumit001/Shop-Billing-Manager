@@ -26,6 +26,7 @@ public class Purchase {
     private BigDecimal rate = BigDecimal.ZERO;
     private BigDecimal total = BigDecimal.ZERO;
     private String note;
+    private String clientRequestId;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -45,4 +46,6 @@ public class Purchase {
     public void setTotal(BigDecimal total) { this.total = total; }
     public String getNote() { return note; }
     public void setNote(String note) { this.note = note; }
+    public String getClientRequestId() { return clientRequestId; }
+    public void setClientRequestId(String clientRequestId) { this.clientRequestId = clientRequestId; }
 }

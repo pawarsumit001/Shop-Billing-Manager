@@ -77,7 +77,8 @@ public class BillingApiController {
             Invoice saved = billingService.createInvoice(
                     invoice,
                     items.stream().map(BillingItemRequest::productId).toList(),
-                    items.stream().map(BillingItemRequest::quantity).toList());
+                    items.stream().map(BillingItemRequest::quantity).toList(),
+                    request.clientRequestId());
             log.info("Bill created invoiceId={} by={} total={} due={}",
                     saved.getId(), saved.getCreatedBy(), saved.getTotal(), saved.getDueAmount());
             return ResponseEntity.ok(InvoiceDto.from(saved));

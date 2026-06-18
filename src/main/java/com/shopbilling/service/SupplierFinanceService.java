@@ -7,6 +7,7 @@ import com.shopbilling.dto.ApiDtos.SupplierSettlementRequest;
 import com.shopbilling.dto.ApiSupport;
 import com.shopbilling.model.PaymentMode;
 import com.shopbilling.model.Supplier;
+import com.shopbilling.model.SupplierClaim;
 import com.shopbilling.model.SupplierPayment;
 import com.shopbilling.model.SupplierSettlement;
 import com.shopbilling.repository.ProductRepository;
@@ -29,18 +30,24 @@ public class SupplierFinanceService {
     private final SupplierPaymentRepository supplierPayments;
     private final SupplierSettlementRepository supplierSettlements;
     private final SupplierLedgerService supplierLedgerService;
+    private final IdempotencyService idempotencyService;
+    private final AuditLogService auditLogService;
 
     public SupplierFinanceService(SupplierRepository suppliers, ProductRepository products,
                                   SupplierClaimRepository supplierClaims,
                                   SupplierPaymentRepository supplierPayments,
                                   SupplierSettlementRepository supplierSettlements,
-                                  SupplierLedgerService supplierLedgerService) {
+                                  SupplierLedgerService supplierLedgerService,
+                                  IdempotencyService idempotencyService,
+                                  AuditLogService auditLogService) {
         this.suppliers = suppliers;
         this.products = products;
         this.supplierClaims = supplierClaims;
         this.supplierPayments = supplierPayments;
         this.supplierSettlements = supplierSettlements;
         this.supplierLedgerService = supplierLedgerService;
+        this.idempotencyService = idempotencyService;
+        this.auditLogService = auditLogService;
     }
 
     public List<SupplierPaymentDto> payments() {
@@ -68,8 +75,34 @@ public class SupplierFinanceService {
         if (amount.compareTo(BigDecimal.ZERO) == 0 && quantity.compareTo(BigDecimal.ZERO) == 0) {
             throw new IllegalArgumentException("Settlement quantity ya amount enter karo");
         }
+        idempotencyService.checkAndRemember("supplier-settlement", request.clientRequestId());
         Supplier supplier = suppliers.findById(request.supplierId())
                 .orElseThrow(() -> new IllegalArgumentException("Supplier not found"));
+        SupplierClaim claim = null;
+        if (request.claimId() != null) {
+            claim = supplierClaims.findById(request.claimId())
+                    .orElseThrow(() -> new IllegalArgumentException("Claim not found"));
+            if (claim.getSupplier() == null || !supplier.getId().equals(claim.getSupplier().getId())) {
+                throw new IllegalArgumentException("Claim selected supplier se linked nahi hai");
+            }
+            if ("SETTLED".equalsIgnoreCase(claim.getStatus())) {
+                throw new IllegalArgumentException("Claim already settled hai");
+            }
+            if ("RECEIVED".equalsIgnoreCase(claim.getStatus())) {
+                throw new IllegalArgumentException("Replacement received claim ko settlement nahi kar sakte");
+            }
+            if ("REJECTED".equalsIgnoreCase(claim.getStatus()) || "CLOSED".equalsIgnoreCase(claim.getStatus())) {
+                throw new IllegalArgumentException("Closed/rejected claim ko settlement nahi kar sakte");
+            }
+            BigDecimal previousSettled = supplierSettlements.findByClaimId(claim.getId()).stream()
+                    .map(SupplierSettlement::getAmount)
+                    .map(ApiSupport::nvl)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal maxAmount = ApiSupport.nvl(claim.getEstimatedAmount());
+            if (previousSettled.add(amount).compareTo(maxAmount) > 0) {
+                throw new IllegalArgumentException("Settlement amount claim value se zyada hai");
+            }
+        }
 
         SupplierSettlement settlement = new SupplierSettlement();
         settlement.setSupplier(supplier);
@@ -81,10 +114,16 @@ public class SupplierFinanceService {
         if (request.productId() != null) {
             products.findById(request.productId()).ifPresent(settlement::setProduct);
         }
-        if (request.claimId() != null) {
-            supplierClaims.findById(request.claimId()).ifPresent(settlement::setClaim);
+        if (claim != null) {
+            settlement.setClaim(claim);
+            claim.setStatus("SETTLED");
+            claim.setResolvedAt(java.time.LocalDateTime.now());
+            supplierClaims.save(claim);
         }
-        return SupplierSettlementDto.from(supplierSettlements.save(settlement));
+        SupplierSettlement saved = supplierSettlements.save(settlement);
+        auditLogService.record(saved.getRecordedBy(), "SUPPLIER_SETTLEMENT", "Supplier", supplier.getId(),
+                "amount=" + amount + ", type=" + settlement.getSettlementType());
+        return SupplierSettlementDto.from(saved);
     }
 
     @Transactional
@@ -96,6 +135,7 @@ public class SupplierFinanceService {
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Payment amount 0 se zyada hona chahiye");
         }
+        idempotencyService.checkAndRemember("supplier-payment", request.clientRequestId());
         Supplier supplier = suppliers.findById(request.supplierId())
                 .orElseThrow(() -> new IllegalArgumentException("Supplier not found"));
         BigDecimal beforeDue = supplierLedgerService.supplierDue(supplier.getId());
@@ -114,7 +154,10 @@ public class SupplierFinanceService {
         payment.setPaymentMode(request.paymentMode() == null ? PaymentMode.CASH : request.paymentMode());
         payment.setNote(request.note());
         payment.setPaidBy(principal == null ? "system" : principal.getName());
-        return SupplierPaymentDto.from(supplierPayments.save(payment));
+        SupplierPayment saved = supplierPayments.save(payment);
+        auditLogService.record(saved.getPaidBy(), "SUPPLIER_PAYMENT", "Supplier", supplier.getId(),
+                "amount=" + amount + ", before=" + beforeDue + ", after=" + payment.getAfterDue());
+        return SupplierPaymentDto.from(saved);
     }
 
     private String cleanOrDefault(String value, String fallback) {

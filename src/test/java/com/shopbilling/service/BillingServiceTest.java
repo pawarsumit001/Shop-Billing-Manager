@@ -25,7 +25,9 @@ class BillingServiceTest {
     private final CustomerRepository customers = mock(CustomerRepository.class);
     private final InvoiceRepository invoices = mock(InvoiceRepository.class);
     private final PurchaseRepository purchases = mock(PurchaseRepository.class);
-    private final BillingService service = new BillingService(products, customers, invoices, purchases);
+    private final IdempotencyService idempotencyService = mock(IdempotencyService.class);
+    private final AuditLogService auditLogService = mock(AuditLogService.class);
+    private final BillingService service = new BillingService(products, customers, invoices, purchases, idempotencyService, auditLogService);
 
     @Test
     void rejectsPaidAmountGreaterThanTotalWithoutChangingStock() {
@@ -38,7 +40,7 @@ class BillingServiceTest {
         invoice.setPaidAmount(new BigDecimal("150"));
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> service.createInvoice(invoice, List.of(1L), List.of(BigDecimal.ONE)));
+                () -> service.createInvoice(invoice, List.of(1L), List.of(BigDecimal.ONE), null));
 
         assertEquals("Paid amount total se zyada nahi ho sakta", error.getMessage());
         assertEquals(new BigDecimal("5"), product.getQuantity());
@@ -57,7 +59,7 @@ class BillingServiceTest {
         invoice.setPaymentMode(PaymentMode.CASH);
         invoice.setPaidAmount(new BigDecimal("40"));
 
-        Invoice saved = service.createInvoice(invoice, List.of(1L), List.of(BigDecimal.ONE));
+        Invoice saved = service.createInvoice(invoice, List.of(1L), List.of(BigDecimal.ONE), null);
 
         assertEquals(0, new BigDecimal("100").compareTo(saved.getTotal()));
         assertEquals(0, new BigDecimal("60").compareTo(saved.getDueAmount()));
